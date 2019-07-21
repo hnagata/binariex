@@ -1,0 +1,45 @@
+<binschema>
+  <data>
+    <sheet name="Bitmap File Header">
+      <leaf name="bfType" size="2" type="char" />
+      <leaf name="bfSize" size="4" type="uint" />
+      <leaf name="bfReserved1" size="2" type="bin" />
+      <leaf name="bfReserved2" size="2" type="bin" />
+      <leaf name="bfOffBits" size="4" type="uint" />
+    </sheet>
+    <sheet name="Bitmap Information Header">
+      <leaf name="hSize" size="4" type="uint" label="hSize" />
+      <if cond="hSize == 40">
+        <leaf name="biWidth" size="4" type="int" label="width" />
+        <leaf name="biHeight" size="4" type="int" label="height" />
+        <leaf name="biPlanes" size="2" type="uint" />
+        <leaf name="biBitCount" size="2" type="uint" label="bitCount" />
+        <leaf name="biCompression" size="4" type="uint" />
+        <leaf name="biSizeImage" size="4" type="uint" />
+        <leaf name="biXPixPerMeter" size="4" type="int" />
+        <leaf name="biYPixPerMeter" size="4" type="int" />
+        <leaf name="biClrUsed" size="4" type="uint" />
+        <leaf name="biCirImportant" size="4" type="uint" />
+      </if>
+      <if cond="hSize == 12">
+        <leaf name="bcWidth" size="2" type="int" label="width" />
+        <leaf name="bcHeight" size="2" type="int" label="height" />
+        <leaf name="bcPlanes" size="2" type="uint" />
+        <leaf name="bcBitCount" size="2" type="uint" label="bitCount" />
+      </if>
+    </sheet>
+    <if cond="bitCount == 1 || bitCount == 4 || bitCount == 8">
+      <sheet name="Palette Data"  repeat="eval:math.pow(2, bitCount)">
+        <leaf name="rgbBlue" size="1" type="uint" />
+        <leaf name="rgbGreen" size="1" type="uint" />
+        <leaf name="rgbRed" size="1" type="uint" />
+        <leaf name="rgbReserved" size="1" type="bin" if="hSize == 40" />
+      </sheet>
+    </if>
+    <sheet name="Data">
+      <group name="Row" repeat="eval:height">
+        <leaf name="eval:`Column${j}`" size="eval:Math.max(bitCount / 8, 1)" type="bin" repeat="eval:width / (Math.max(8 / bitCount, 1))" indexLabel="j" flat="1" />
+      </group>
+    </sheet>
+  </data>
+</binschema>

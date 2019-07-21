@@ -1,0 +1,4 @@
+﻿outputPath: ..\..\..\Sample\{sourceName}{targetExtension}
+schemaMapping:
+  "*.bmp": ..\..\..\Sample\bmp.xml
+  "*.bmp.xlsx": ..\..\..\Sample\bmp.xml

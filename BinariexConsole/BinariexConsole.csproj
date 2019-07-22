@@ -36,6 +36,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\src\BinariexApp.cs" />
+    <Compile Include="..\src\BinariexException.cs">
+      <Link>BinariexException.cs</Link>
+    </Compile>
     <Compile Include="..\src\BinaryWriter.cs" />
     <Compile Include="..\src\BinSchemaException.cs" />
     <Compile Include="..\src\BinaryReader.cs" />
@@ -55,6 +58,9 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="NLog.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
@@ -68,6 +74,9 @@
       <HintPath>..\packages\Glob.1.1.3\lib\net46\Glob.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="NLog, Version=4.0.0.0, Culture=neutral, PublicKeyToken=5120e14c03d0593c, processorArchitecture=MSIL">
+      <HintPath>..\packages\NLog.4.6.6\lib\net45\NLog.dll</HintPath>
+    </Reference>
     <Reference Include="PresentationCore" />
     <Reference Include="System" />
     <Reference Include="System.configuration" />

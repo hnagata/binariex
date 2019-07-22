@@ -78,6 +78,11 @@ namespace binariex
             decoded = decode(leafInfo, buffer);
         }
 
+        public void Seek(long offset)
+        {
+            this.stream.Seek(offset, SeekOrigin.Current);
+        }
+
         public void Dispose()
         {
             this.stream.Dispose();

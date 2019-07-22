@@ -180,6 +180,11 @@ namespace binariex
             }
         }
 
+        public void Seek(long offset)
+        {
+            // Nothing to do
+        }
+
         public void Dispose()
         {
             this.package.Dispose();

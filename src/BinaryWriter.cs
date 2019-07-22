@@ -71,6 +71,11 @@ namespace binariex
             this.stream.Write(encoded, 0, encoded.Length);
         }
 
+        public void Seek(long offset)
+        {
+            this.stream.Seek(offset, SeekOrigin.Current);
+        }
+
         public void Dispose()
         {
             this.stream.Dispose();

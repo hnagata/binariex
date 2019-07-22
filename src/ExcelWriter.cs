@@ -248,6 +248,11 @@ namespace binariex
             this.package.SaveAs(outputFile);
         }
 
+        public void Seek(long offset)
+        {
+            // Nothing to do
+        }
+
         public void Dispose()
         {
             this.package.Dispose();

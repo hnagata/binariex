@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace binariex
 {
@@ -71,6 +69,11 @@ namespace binariex
             }
 
             this.stream.Write(encoded, 0, encoded.Length);
+        }
+
+        public void Seek(long offset)
+        {
+            this.stream.Seek(offset, SeekOrigin.Current);
         }
 
         public void Dispose()

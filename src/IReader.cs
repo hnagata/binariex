@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
-
-namespace binariex
+﻿namespace binariex
 {
     interface IReader
     {
@@ -16,5 +9,6 @@ namespace binariex
         void PushGroup(string name);
         void PushSheet(string name);
         void GetValue(LeafInfo leafInfo, out object raw, out object decoded);
+        void Seek(long offset);
     }
 }

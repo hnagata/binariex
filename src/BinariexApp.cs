@@ -2,11 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Xml.Linq;
 using YamlDotNet.Serialization;
 
@@ -189,7 +186,7 @@ namespace binariex
             {
                 using (var reader = new BinaryReader(inputPath))
                 {
-                    using (var writer = new ExcelWriter(outputPath.Replace("{targetExtension}", ".xlsx")))
+                    using (var writer = new ExcelWriter(outputPath.Replace("{targetExtension}", ".xlsx"), this.settings["excel"]))
                     {
                         new Converter(reader, writer, schemaDoc).Run();
                         writer.Save();

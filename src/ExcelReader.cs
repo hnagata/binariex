@@ -3,8 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace binariex
 {
@@ -22,15 +20,22 @@ namespace binariex
 
         public void BeginRepeat()
         {
-            var ctx = this.groupCtxStack.Peek();
-            ctx.RepeatEnabled = true;
+            if (this.groupCtxStack.Count > 0)
+            {
+                var ctx = this.groupCtxStack.Peek();
+                ctx.RepeatEnabled = true;
+            }
         }
 
         public void EndRepeat()
         {
-            var ctx = this.groupCtxStack.Peek();
-            ctx.CursorRowIndex = ctx.TopRowIndex;
-            ctx.CursorColumnIndex = ctx.LeftColumnIndex + ctx.ColumnCount;
+            if (this.groupCtxStack.Count > 0)
+            {
+                var ctx = this.groupCtxStack.Peek();
+                ctx.CursorRowIndex = ctx.TopRowIndex;
+                ctx.CursorColumnIndex = ctx.LeftColumnIndex + ctx.ColumnCount;
+                ctx.RepeatEnabled = false;
+            }
         }
 
         public void PopGroup()
@@ -53,7 +58,8 @@ namespace binariex
 
         public void PopSheet()
         {
-            this.groupCtxStack.Pop();
+            var ctx = this.groupCtxStack.Pop();
+            ctx.SheetContext.CursorRowIndex += ctx.RowCount;
         }
 
         public void PushGroup(string name)
@@ -90,7 +96,7 @@ namespace binariex
             if (!this.sheetCtxMap.TryGetValue(name, out var sheetCtx))
             {
                 var cursorRowIndex = 1;
-                while (sheet.Cells[cursorRowIndex, sheet.Dimension.End.Column].Text == ExcelWriter.HEADER_MARKER)
+                while (sheet.Cells[cursorRowIndex, sheet.Dimension.Columns].Text == ExcelWriter.HEADER_MARKER)
                 {
                     cursorRowIndex++;
                 }
@@ -105,6 +111,7 @@ namespace binariex
             var groupCtx = new GroupContext
             {
                 Sheet = sheet,
+                SheetContext = sheetCtx,
                 TopRowIndex = sheetCtx.CursorRowIndex,
                 LeftColumnIndex = 1,
                 CursorRowIndex = sheetCtx.CursorRowIndex,
@@ -122,6 +129,11 @@ namespace binariex
             }
             var ctx = this.groupCtxStack.Peek();
 
+            if (ctx.CursorRowIndex > ctx.Sheet.Dimension.Rows)
+            {
+                throw new EndOfStreamException();
+            }
+
             var cellText = ctx.Sheet.Cells[ctx.CursorRowIndex, ctx.CursorColumnIndex].Text;
             raw = cellText;
 
@@ -129,9 +141,16 @@ namespace binariex
             switch (leafInfo.Type)
             {
                 case "bin":
-                    decoded = Enumerable.Range(0, valueStr.Length / 2)
-                        .Select(i => Convert.ToByte(valueStr.Substring(i * 2, 2), 16))
-                        .ToArray();
+                    if (valueStr.EndsWith(".."))
+                    {
+                        decoded = Enumerable.Repeat((byte)0, leafInfo.Size).ToArray();
+                    }
+                    else
+                    {
+                        decoded = Enumerable.Range(0, valueStr.Length / 2)
+                            .Select(i => Convert.ToByte(valueStr.Substring(i * 2, 2), 16))
+                            .ToArray();
+                    }
                     break;
                 case "char":
                     decoded = valueStr;
@@ -151,7 +170,7 @@ namespace binariex
             {
                 ctx.CursorRowIndex += 1;
                 ctx.RowCount = Math.Max(ctx.RowCount, ctx.CursorRowIndex - ctx.TopRowIndex);
-                ctx.ColumnCount = Math.Max(ctx.ColumnCount, 1);
+                ctx.ColumnCount = Math.Max(ctx.ColumnCount, ctx.CursorColumnIndex - ctx.LeftColumnIndex + 1);
             }
             else
             {
@@ -159,6 +178,11 @@ namespace binariex
                 ctx.RowCount = Math.Max(ctx.RowCount, 1);
                 ctx.ColumnCount += 1;
             }
+        }
+
+        public void Seek(long offset)
+        {
+            // Nothing to do
         }
 
         public void Dispose()
@@ -169,6 +193,7 @@ namespace binariex
         class GroupContext
         {
             public ExcelWorksheet Sheet { get; set; }
+            public SheetContext SheetContext { get; set; }
             public int TopRowIndex { get; set; }
             public int LeftColumnIndex { get; set; }
             public int CursorRowIndex { get; set; }

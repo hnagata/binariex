@@ -2,9 +2,8 @@
 using Microsoft.ClearScript.V8;
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.IO;
 using System.Text;
-using System.Threading.Tasks;
 using System.Xml.Linq;
 
 namespace binariex
@@ -27,6 +26,7 @@ namespace binariex
             this.parseElemMap = new Dictionary<string, Action<XElement>>
             {
                 { "if", ParseIf },
+                { "seek", ParseSeek },
                 { "sheet", ParseSheet },
                 { "group", ParseGroup },
                 { "leaf", ParseLeaf },
@@ -52,7 +52,9 @@ namespace binariex
 
         void ParseElement(XElement elem)
         {
-            var numRepeat = EvaluateExpr(elem.Attribute("repeat")?.Value) as int? ?? 1;
+            var numRepeatRepr = elem.Attribute("repeat")?.Value;
+            var numRepeat = numRepeatRepr == "*" ? Int32.MaxValue :
+                EvaluateExpr(numRepeatRepr) as int? ?? 1;
             var indexLabel = elem.Attribute("indexLabel")?.Value;
             bool flat = numRepeat == 1 || IsJSTrue(EvaluateExpr(elem.Attribute("flat")?.Value));
             if (!flat)
@@ -60,25 +62,37 @@ namespace binariex
                 this.reader.BeginRepeat();
                 this.writer.BeginRepeat();
             }
-            for (int i = 1; i <= numRepeat; i++)
+            for (int i = 0; i < numRepeat; i++)
             {
-                if (indexLabel != null)
-                {
-                    this.v8Engine.Script[indexLabel] = i;
-                }
-
                 if (elem.Attribute("if") != null && !IsJSTrue(EvaluateJSExpr(elem.Attribute("if").Value)))
                 {
                     return;
                 }
 
-                if (this.parseElemMap.TryGetValue(elem.Name.LocalName, out var parseElem))
+                if (indexLabel != null)
+                {
+                    this.v8Engine.Script[indexLabel] = i + 1;
+                }
+
+                if (!this.parseElemMap.TryGetValue(elem.Name.LocalName, out var parseElem))
+                {
+                    throw new BinSchemaException(elem);
+                }
+
+                try
                 {
                     parseElem(elem);
                 }
-                else
+                catch (EndOfStreamException)
                 {
-                    throw new BinSchemaException(elem);
+                    if (numRepeatRepr == "*")
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        throw;
+                    }
                 }
             }
             if (!flat)
@@ -102,6 +116,13 @@ namespace binariex
             {
                 ParseChildren(elem);
             }
+        }
+
+        void ParseSeek(XElement elem)
+        {
+            var offset = long.Parse(elem.Attribute("offset").Value);
+            this.reader.Seek(offset);
+            this.writer.Seek(offset);
         }
 
         void ParseSheet(XElement elem)

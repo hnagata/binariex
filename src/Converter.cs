@@ -2,9 +2,8 @@
 using Microsoft.ClearScript.V8;
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.IO;
 using System.Text;
-using System.Threading.Tasks;
 using System.Xml.Linq;
 
 namespace binariex
@@ -52,7 +51,9 @@ namespace binariex
 
         void ParseElement(XElement elem)
         {
-            var numRepeat = EvaluateExpr(elem.Attribute("repeat")?.Value) as int? ?? 1;
+            var numRepeatRepr = elem.Attribute("repeat")?.Value;
+            var numRepeat = numRepeatRepr == "*" ? Int32.MaxValue :
+                EvaluateExpr(numRepeatRepr) as int? ?? 1;
             var indexLabel = elem.Attribute("indexLabel")?.Value;
             bool flat = numRepeat == 1 || IsJSTrue(EvaluateExpr(elem.Attribute("flat")?.Value));
             if (!flat)
@@ -74,7 +75,21 @@ namespace binariex
 
                 if (this.parseElemMap.TryGetValue(elem.Name.LocalName, out var parseElem))
                 {
-                    parseElem(elem);
+                    try
+                    {
+                        parseElem(elem);
+                    }
+                    catch (EndOfStreamException)
+                    {
+                        if (numRepeatRepr == "*")
+                        {
+                            break;
+                        }
+                        else
+                        {
+                            throw;
+                        }
+                    }
                 }
                 else
                 {

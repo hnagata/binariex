@@ -2,17 +2,18 @@
 using OfficeOpenXml.Style;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace binariex
 {
     class ExcelWriter : IWriter, IDisposable
     {
         public const string HEADER_MARKER = "HEADER";
+        const int MAX_NUM_CHAR_IN_LINE = 254;
+
+        readonly dynamic settings;
 
         readonly FileInfo outputFile;
         readonly ExcelPackage package;
@@ -20,23 +21,42 @@ namespace binariex
         readonly Stack<GroupContext> groupCtxStack = new Stack<GroupContext>();
         readonly Dictionary<string, SheetContext> sheetCtxMap = new Dictionary<string, SheetContext>();
 
-        public ExcelWriter(string path)
+        public ExcelWriter(string path, dynamic settings)
         {
+            this.settings = settings;
             this.outputFile = new FileInfo(path);
             this.package = new ExcelPackage();
         }
 
         public void BeginRepeat()
         {
-            var ctx = this.groupCtxStack.Peek();
-            ctx.RepeatEnabled = true;
+            if (this.groupCtxStack.Count > 0)
+            {
+                var ctx = this.groupCtxStack.Peek();
+                ctx.RepeatEnabled = true;
+            }
         }
 
         public void EndRepeat()
         {
-            var ctx = this.groupCtxStack.Peek();
-            ctx.CursorRowIndex = ctx.TopRowIndex;
-            ctx.CursorColumnIndex = ctx.LeftColumnIndex + ctx.ColumnCount;
+            if (this.groupCtxStack.Count > 0)
+            {
+                var ctx = this.groupCtxStack.Peek();
+
+                if (ctx.CursorRowIndex > ctx.TopRowIndex && ctx.ColumnCount > 0)
+                {
+                    var top = ctx.SheetContext.HeaderRowCount + ctx.TopRowIndex;
+                    var left = ctx.CursorColumnIndex;
+                    var bottom = ctx.SheetContext.HeaderRowCount + ctx.CursorRowIndex - 1;
+                    var right = ctx.LeftColumnIndex + ctx.ColumnCount - 1;
+                    ctx.Sheet.Cells[top, left, bottom, left].Style.Border.Left.Style = ExcelBorderStyle.Thin;
+                    ctx.Sheet.Cells[top, right, bottom, right].Style.Border.Right.Style = ExcelBorderStyle.Thin;
+                }
+
+                ctx.CursorRowIndex = ctx.TopRowIndex;
+                ctx.CursorColumnIndex = ctx.LeftColumnIndex + ctx.ColumnCount;
+                ctx.RepeatEnabled = false;
+            }
         }
 
         public void PopGroup()
@@ -45,7 +65,15 @@ namespace binariex
             var parentCtx = this.groupCtxStack.Peek();
             if (parentCtx.RepeatEnabled)
             {
-                SetBorder(parentCtx, ctx.TopRowIndex, ctx.RowCount, ctx.LeftColumnIndex, ctx.ColumnCount);
+                if (ctx.RowCount > 0 && ctx.ColumnCount > 0)
+                {
+                    ctx.Sheet.Cells[
+                        ctx.SheetContext.HeaderRowCount + ctx.TopRowIndex + ctx.RowCount - 1,
+                        ctx.LeftColumnIndex,
+                        ctx.SheetContext.HeaderRowCount + ctx.TopRowIndex + ctx.RowCount - 1,
+                        ctx.LeftColumnIndex + ctx.ColumnCount - 1
+                    ].Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
+                }
 
                 parentCtx.CursorRowIndex += ctx.RowCount;
                 parentCtx.RowCount = Math.Max(parentCtx.RowCount, ctx.TopRowIndex + ctx.RowCount - parentCtx.TopRowIndex);
@@ -61,7 +89,18 @@ namespace binariex
 
         public void PopSheet()
         {
-            this.groupCtxStack.Pop();
+            var ctx = this.groupCtxStack.Pop();
+
+            if (ctx.RowCount > 0 && ctx.ColumnCount > 0)
+            {
+                var top = ctx.SheetContext.HeaderRowCount + ctx.TopRowIndex;
+                var left = ctx.LeftColumnIndex;
+                var bottom = ctx.SheetContext.HeaderRowCount + ctx.TopRowIndex + ctx.RowCount - 1;
+                var right = ctx.LeftColumnIndex + ctx.ColumnCount - 1;
+                ctx.Sheet.Cells[bottom, left, bottom, right].Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
+                ctx.Sheet.Cells[top, left, bottom, left].Style.Border.Left.Style = ExcelBorderStyle.Thin;
+                ctx.Sheet.Cells[top, right, bottom, right].Style.Border.Right.Style = ExcelBorderStyle.Thin;
+            }
         }
 
         public void PushGroup(string name)
@@ -113,9 +152,9 @@ namespace binariex
                 Sheet = sheet,
                 SheetContext = sheetCtx,
                 HeaderRowIndex = 0,
-                TopRowIndex = (sheet.Dimension != null ? sheet.Dimension.End.Row : 0) - sheetCtx.HeaderRowCount + 1,
+                TopRowIndex = (sheet.Dimension != null ? sheet.Dimension.Rows : 0) - sheetCtx.HeaderRowCount + 1,
                 LeftColumnIndex = 1,
-                CursorRowIndex = (sheet.Dimension != null ? sheet.Dimension.End.Row : 0) - sheetCtx.HeaderRowCount + 1,
+                CursorRowIndex = (sheet.Dimension != null ? sheet.Dimension.Rows : 0) - sheetCtx.HeaderRowCount + 1,
                 CursorColumnIndex = 1,
             };
 
@@ -134,20 +173,21 @@ namespace binariex
 
             var rawRepr = string.Join("", (raw as byte[]).Select(e => e.ToString("X2")));
             var totalRepr = raw != decoded ? $@"{decoded.ToString()} <{rawRepr}>" : rawRepr;
+            var dispRepr = totalRepr.Length > MAX_NUM_CHAR_IN_LINE ? totalRepr.Substring(0, MAX_NUM_CHAR_IN_LINE - 2) + ".." : totalRepr;
 
             var cell = ctx.Sheet.Cells[ctx.CursorRowIndex + ctx.SheetContext.HeaderRowCount, ctx.CursorColumnIndex];
-            cell.Value = totalRepr;
+            cell.Value = dispRepr;
 
             if (ctx.RepeatEnabled)
             {
-                SetBorder(ctx, ctx.CursorRowIndex, ctx.CursorColumnIndex, 1, 1);
+                cell.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
             }
 
             if (ctx.RepeatEnabled)
             {
                 ctx.CursorRowIndex += 1;
                 ctx.RowCount = Math.Max(ctx.RowCount, ctx.CursorRowIndex - ctx.TopRowIndex);
-                ctx.ColumnCount = Math.Max(ctx.ColumnCount, 1);
+                ctx.ColumnCount = Math.Max(ctx.ColumnCount, ctx.CursorColumnIndex - ctx.LeftColumnIndex + 1);
             }
             else
             {
@@ -161,8 +201,49 @@ namespace binariex
         {
             foreach (var sheetCtx in this.sheetCtxMap.Values)
             {
-                int rightOutColumnIndex = sheetCtx.Sheet.Dimension.End.Column + 1;
-                sheetCtx.Sheet.Cells[1, rightOutColumnIndex, sheetCtx.HeaderRowCount, rightOutColumnIndex].Value = HEADER_MARKER;
+                var sheet = sheetCtx.Sheet;
+
+                sheet.Cells.Style.Font.Name = this.settings["fontFamily"];
+
+                if (this.settings["enableAutoFilter"] == "true")
+                {
+                    sheet.Cells[sheetCtx.HeaderRowCount, 1, sheet.Dimension.Rows, sheet.Dimension.Columns].AutoFilter = true;
+                }
+
+                var headerRange = sheet.Cells[1, 1, sheetCtx.HeaderRowCount, sheet.Dimension.Columns];
+                headerRange.Style.Fill.PatternType = ExcelFillStyle.Solid;
+                headerRange.Style.Fill.BackgroundColor.SetColor(Color.FromName(this.settings["headerColor"]));
+
+                sheet.Cells[1, 1, 1, sheet.Dimension.Columns].Style.Border.Top.Style = ExcelBorderStyle.Thin;
+                sheet.Cells[1, 1, sheetCtx.HeaderRowCount, 1].Style.Border.Left.Style = ExcelBorderStyle.Thin;
+                sheet.Cells[1, sheet.Dimension.Columns, sheetCtx.HeaderRowCount, sheet.Dimension.Columns].Style.Border.Right.Style = ExcelBorderStyle.Thin;
+                for (var c = 1; c <= sheet.Dimension.Columns; c++)
+                {
+                    var appearInCol = false;
+                    for (var r = 1; r <= sheetCtx.HeaderRowCount; r++)
+                    {
+                        appearInCol |= sheet.Cells[r, c].Text != "";
+                        if (sheet.Cells[r + 1, c].Text != "")
+                        {
+                            sheet.Cells[r, c].Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
+                        }
+                        else if (c > 1 && !appearInCol)
+                        {
+                            sheet.Cells[r, c].Style.Border.Bottom.Style = sheet.Cells[r, c - 1].Style.Border.Bottom.Style;
+                        }
+                        if (sheet.Cells[r, c + 1].Text != "")
+                        {
+                            sheet.Cells[r, c].Style.Border.Right.Style = ExcelBorderStyle.Thin;
+                        }
+                        else if (r > 1)
+                        {
+                            sheet.Cells[r, c].Style.Border.Right.Style = sheet.Cells[r - 1, c].Style.Border.Right.Style;
+                        }
+                    }
+                }
+
+                var rightOutColumnIndex = sheet.Dimension.Columns + 1;
+                sheet.Cells[1, rightOutColumnIndex, sheetCtx.HeaderRowCount, rightOutColumnIndex].Value = HEADER_MARKER;
             }
             this.package.SaveAs(outputFile);
         }
@@ -189,20 +270,6 @@ namespace binariex
             {
                 throw new InvalidOperationException();
             }
-        }
-
-        void SetBorder(GroupContext ctx, int topRowIndex, int rowCount, int leftColumnIndex, int columnCount)
-        {
-            if (rowCount == 0 || columnCount == 0)
-            {
-                return;
-            }
-            var range = ctx.Sheet.Cells[
-                topRowIndex + ctx.SheetContext.HeaderRowCount, 
-                leftColumnIndex, 
-                topRowIndex + ctx.SheetContext.HeaderRowCount + rowCount - 1, 
-                leftColumnIndex + columnCount - 1];
-            range.Style.Border.BorderAround(ExcelBorderStyle.Thin);
         }
 
         class GroupContext

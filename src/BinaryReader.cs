@@ -1,12 +1,7 @@
-﻿using Microsoft.ClearScript;
-using Microsoft.ClearScript.V8;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace binariex
 {
@@ -71,7 +66,7 @@ namespace binariex
             }
             if (total < leafInfo.Size)
             {
-                throw new InvalidDataException();
+                throw new EndOfStreamException();
             }
             raw = buffer;
 

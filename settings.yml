@@ -2,3 +2,8 @@
 schemaMapping:
   "*.bmp": ..\..\..\Sample\bmp.xml
   "*.bmp.xlsx": ..\..\..\Sample\bmp.xml
+excel:
+  enableAutoFilter: true
+  fontFamily: Consolas
+  headerColor: SkyBlue
+  

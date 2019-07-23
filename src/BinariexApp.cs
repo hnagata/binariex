@@ -15,14 +15,21 @@ namespace binariex
 
         static readonly NLog.Logger logger = NLog.LogManager.GetCurrentClassLogger();
 
-        readonly string[] inputPaths;
+        readonly IEnumerable<string> inputPaths;
+        readonly string settingsPath;
 
         dynamic settings;
         Dictionary<Glob, string> schemaMap = new Dictionary<Glob, string>();
 
-        public BinariexApp(string[] inputPaths)
+        public BinariexApp(IEnumerable<string> inputPaths)
         {
             this.inputPaths = inputPaths;
+        }
+
+        public BinariexApp(IEnumerable<string> inputPaths, string settingsPath)
+        {
+            this.inputPaths = inputPaths;
+            this.settingsPath = settingsPath;
         }
 
         public void Run()
@@ -39,18 +46,18 @@ namespace binariex
             {
                 WriteErrorLog(exc);
             }
-            catch (Exception exc)
-            {
-                logger.Error("Unexpected error occurred. Notify the developers.");
-                logger.Error(exc);
-            }
+            //catch (Exception exc)
+            //{
+            //    logger.Error("Unexpected error occurred. Notify the developers.");
+            //    logger.Error(exc);
+            //}
         }
 
         void LoadSettings()
         {
             var exeDir = Directory.GetParent(Assembly.GetExecutingAssembly().Location).FullName;
-            var settingsFilePath = Path.Combine(exeDir, SETTINGS_NAME);
-            if (!File.Exists(settingsFilePath))
+            var settingsPath = this.settingsPath ?? Path.Combine(exeDir, SETTINGS_NAME);
+            if (!File.Exists(settingsPath))
             {
                 throw new BinariexException("loading setting file", "Setting file not found.");
             }
@@ -58,7 +65,7 @@ namespace binariex
             try
             {
                 var deserializer = new Deserializer();
-                using (var reader = new StreamReader(File.OpenRead(settingsFilePath)))
+                using (var reader = new StreamReader(File.OpenRead(settingsPath)))
                 {
                     this.settings = deserializer.Deserialize<dynamic>(reader);
                 }
@@ -68,7 +75,7 @@ namespace binariex
                 if (exc is YamlDotNet.Core.SyntaxErrorException || exc is YamlDotNet.Core.SemanticErrorException)
                 {
                     throw new BinariexException(exc, "loading setting file", "Invalid syntax/semantics within the setting file.")
-                        .AddInputPath($@"{Path.GetFileName(settingsFilePath)} {Regex.Match(exc.Message, @"\(Line:.+?\)").Value}");
+                        .AddInputPath($@"{Path.GetFileName(settingsPath)} {Regex.Match(exc.Message, @"\(Line:.+?\)").Value}");
                 }
                 else
                 {
@@ -131,12 +138,17 @@ namespace binariex
         {
             try
             {
+                logger.Info("Start converting...");
+                logger.Info("  Path: {0}", inputPath);
+
                 RunWithSingleFile(inputPath);
+
+                logger.Info("Finished.");
             }
             catch (BinariexException exc)
             {
                 WriteErrorLog(exc.AddInputPath(inputPath));
-                logger.Warn("Skipped input file: {0}.", Path.GetFileName(inputPath));
+                logger.Warn("Skipped. ({0})", Path.GetFileName(inputPath));
             }
         }
 
@@ -221,9 +233,8 @@ namespace binariex
 
         void WriteErrorLog(BinariexException exc)
         {
-            logger.Error("[{0}]", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"));
+            logger.Error("Error occured while {0}:", exc.Stage);
             logger.Error(exc.Message ?? exc.InnerException.Message, exc.MessageParams);
-            logger.Error("  Stage:  {0}", exc.Stage);
             if (exc.InputPath != null)
             {
                 logger.Error("  Input:  {0}", exc.InputPath);

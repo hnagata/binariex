@@ -8,63 +8,43 @@ using System.Linq;
 
 namespace binariex
 {
-    class ExcelWriter : IWriter, IDisposable
+    class ExcelWriter : ExcelBase, IWriter, IDisposable
     {
-        public const string HEADER_MARKER = "HEADER";
         const int MAX_NUM_CHAR_IN_LINE = 254;
 
         readonly dynamic settings;
-
         readonly FileInfo outputFile;
-        readonly ExcelPackage package;
 
-        readonly Stack<GroupContext> groupCtxStack = new Stack<GroupContext>();
-        readonly Dictionary<string, SheetContext> sheetCtxMap = new Dictionary<string, SheetContext>();
+        readonly ExcelPackage package;
 
         public ExcelWriter(string path, dynamic settings)
         {
-            this.settings = settings;
             this.outputFile = new FileInfo(path);
+            this.settings = settings;
+
             this.package = new ExcelPackage();
         }
 
-        public void BeginRepeat()
+        public override void EndRepeat()
         {
-            if (this.groupCtxStack.Count > 0)
+            var ctx = this.CurrentContext;
+            if (ctx != null && ctx.CursorRowIndex > ctx.TopRowIndex && ctx.ColumnCount > 0)
             {
-                var ctx = this.groupCtxStack.Peek();
-                ctx.RepeatEnabled = true;
+                var top = ctx.SheetContext.HeaderRowCount + ctx.TopRowIndex;
+                var left = ctx.CursorColumnIndex;
+                var bottom = ctx.SheetContext.HeaderRowCount + ctx.CursorRowIndex - 1;
+                var right = ctx.LeftColumnIndex + ctx.ColumnCount - 1;
+                ctx.Sheet.Cells[top, left, bottom, left].Style.Border.Left.Style = ExcelBorderStyle.Thin;
+                ctx.Sheet.Cells[top, right, bottom, right].Style.Border.Right.Style = ExcelBorderStyle.Thin;
             }
+            base.EndRepeat();
         }
 
-        public void EndRepeat()
+        public override void PopGroup()
         {
-            if (this.groupCtxStack.Count > 0)
+            if (this.ParentContext.RepeatEnabled)
             {
-                var ctx = this.groupCtxStack.Peek();
-
-                if (ctx.CursorRowIndex > ctx.TopRowIndex && ctx.ColumnCount > 0)
-                {
-                    var top = ctx.SheetContext.HeaderRowCount + ctx.TopRowIndex;
-                    var left = ctx.CursorColumnIndex;
-                    var bottom = ctx.SheetContext.HeaderRowCount + ctx.CursorRowIndex - 1;
-                    var right = ctx.LeftColumnIndex + ctx.ColumnCount - 1;
-                    ctx.Sheet.Cells[top, left, bottom, left].Style.Border.Left.Style = ExcelBorderStyle.Thin;
-                    ctx.Sheet.Cells[top, right, bottom, right].Style.Border.Right.Style = ExcelBorderStyle.Thin;
-                }
-
-                ctx.CursorRowIndex = ctx.TopRowIndex;
-                ctx.CursorColumnIndex = ctx.LeftColumnIndex + ctx.ColumnCount;
-                ctx.RepeatEnabled = false;
-            }
-        }
-
-        public void PopGroup()
-        {
-            var ctx = this.groupCtxStack.Pop();
-            var parentCtx = this.groupCtxStack.Peek();
-            if (parentCtx.RepeatEnabled)
-            {
+                var ctx = this.CurrentContext;
                 if (ctx.RowCount > 0 && ctx.ColumnCount > 0)
                 {
                     ctx.Sheet.Cells[
@@ -74,23 +54,13 @@ namespace binariex
                         ctx.LeftColumnIndex + ctx.ColumnCount - 1
                     ].Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
                 }
-
-                parentCtx.CursorRowIndex += ctx.RowCount;
-                parentCtx.RowCount = Math.Max(parentCtx.RowCount, ctx.TopRowIndex + ctx.RowCount - parentCtx.TopRowIndex);
-                parentCtx.ColumnCount = Math.Max(parentCtx.ColumnCount, ctx.LeftColumnIndex + ctx.ColumnCount - parentCtx.LeftColumnIndex);
             }
-            else
-            {
-                parentCtx.CursorColumnIndex += ctx.ColumnCount;
-                parentCtx.RowCount = Math.Max(parentCtx.RowCount, ctx.TopRowIndex + ctx.RowCount - parentCtx.TopRowIndex);
-                parentCtx.ColumnCount += ctx.ColumnCount;
-            }
+            base.PopGroup();
         }
 
-        public void PopSheet()
+        public override void PopSheet()
         {
-            var ctx = this.groupCtxStack.Pop();
-
+            var ctx = this.CurrentContext;
             if (ctx.RowCount > 0 && ctx.ColumnCount > 0)
             {
                 var top = ctx.SheetContext.HeaderRowCount + ctx.TopRowIndex;
@@ -101,73 +71,29 @@ namespace binariex
                 ctx.Sheet.Cells[top, left, bottom, left].Style.Border.Left.Style = ExcelBorderStyle.Thin;
                 ctx.Sheet.Cells[top, right, bottom, right].Style.Border.Right.Style = ExcelBorderStyle.Thin;
             }
+            base.PopSheet();
         }
 
-        public void PushGroup(string name)
+        public override void PushGroup(string name)
         {
-            if (this.groupCtxStack.Count == 0)
-            {
-                throw new InvalidOperationException();
-            }
-            var parentCtx = this.groupCtxStack.Peek();
+            base.PushGroup(name);
 
-            var newCtx = new GroupContext
-            {
-                Sheet = parentCtx.Sheet,
-                SheetContext = parentCtx.SheetContext,
-                HeaderRowIndex = parentCtx.HeaderRowIndex + 1,
-                TopRowIndex = parentCtx.CursorRowIndex,
-                LeftColumnIndex = parentCtx.CursorColumnIndex,
-                CursorRowIndex = parentCtx.CursorRowIndex,
-                CursorColumnIndex = parentCtx.CursorColumnIndex
-            };
-
-            SetHeaderName(newCtx, newCtx.HeaderRowIndex, newCtx.LeftColumnIndex, name);
-
-            this.groupCtxStack.Push(newCtx);
+            var ctx = this.CurrentContext;
+            SetHeaderName(ctx, ctx.HeaderRowIndex, ctx.LeftColumnIndex, name);
         }
 
-        public void PushSheet(string name)
+        protected override ExcelWorksheet OpenSheet(string name)
         {
-            foreach (var parentCtx in this.groupCtxStack)
-            {
-                if (parentCtx.Sheet.Name == name)
-                {
-                    throw new InvalidOperationException();
-                }
-            }
-
-            var sheet = this.package.Workbook.Worksheets[name] ?? this.package.Workbook.Worksheets.Add(name);
-            if (!this.sheetCtxMap.TryGetValue(name, out var sheetCtx))
-            {
-                sheetCtx = new SheetContext
-                {
-                    Sheet = sheet
-                };
-                this.sheetCtxMap[name] = sheetCtx;
-            }
-
-            var groupCtx = new GroupContext
-            {
-                Sheet = sheet,
-                SheetContext = sheetCtx,
-                HeaderRowIndex = 0,
-                TopRowIndex = (sheet.Dimension != null ? sheet.Dimension.Rows : 0) - sheetCtx.HeaderRowCount + 1,
-                LeftColumnIndex = 1,
-                CursorRowIndex = (sheet.Dimension != null ? sheet.Dimension.Rows : 0) - sheetCtx.HeaderRowCount + 1,
-                CursorColumnIndex = 1,
-            };
-
-            this.groupCtxStack.Push(groupCtx);
+            return package.Workbook.Worksheets[name] ?? package.Workbook.Worksheets.Add(name);
         }
 
         public void SetValue(LeafInfo leafInfo, object raw, object decoded)
         {
-            if (this.groupCtxStack.Count == 0)
+            var ctx = this.CurrentContext;
+            if (ctx == null)
             {
                 throw new InvalidOperationException();
             }
-            var ctx = this.groupCtxStack.Peek();
 
             SetHeaderName(ctx, ctx.HeaderRowIndex + 1, ctx.CursorColumnIndex, leafInfo.Name);
 
@@ -175,7 +101,7 @@ namespace binariex
             var totalRepr = raw != decoded ? $@"{decoded.ToString()} <{rawRepr}>" : rawRepr;
             var dispRepr = totalRepr.Length > MAX_NUM_CHAR_IN_LINE ? totalRepr.Substring(0, MAX_NUM_CHAR_IN_LINE - 2) + ".." : totalRepr;
 
-            var cell = ctx.Sheet.Cells[ctx.CursorRowIndex + ctx.SheetContext.HeaderRowCount, ctx.CursorColumnIndex];
+            var cell = ctx.Sheet.Cells[ctx.SheetContext.HeaderRowCount + ctx.CursorRowIndex, ctx.CursorColumnIndex];
             cell.Value = dispRepr;
 
             if (ctx.RepeatEnabled)
@@ -183,23 +109,12 @@ namespace binariex
                 cell.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
             }
 
-            if (ctx.RepeatEnabled)
-            {
-                ctx.CursorRowIndex += 1;
-                ctx.RowCount = Math.Max(ctx.RowCount, ctx.CursorRowIndex - ctx.TopRowIndex);
-                ctx.ColumnCount = Math.Max(ctx.ColumnCount, ctx.CursorColumnIndex - ctx.LeftColumnIndex + 1);
-            }
-            else
-            {
-                ctx.CursorColumnIndex += 1;
-                ctx.RowCount = Math.Max(ctx.RowCount, 1);
-                ctx.ColumnCount += 1;
-            }
+            base.StepCursor();
         }
 
         public void Save()
         {
-            foreach (var sheetCtx in this.sheetCtxMap.Values)
+            foreach (var sheetCtx in this.SheetContextMap.Values)
             {
                 var sheet = sheetCtx.Sheet;
 
@@ -248,11 +163,6 @@ namespace binariex
             this.package.SaveAs(outputFile);
         }
 
-        public void Seek(long offset)
-        {
-            // Nothing to do
-        }
-
         public void Dispose()
         {
             this.package.Dispose();
@@ -275,26 +185,6 @@ namespace binariex
             {
                 throw new InvalidOperationException();
             }
-        }
-
-        class GroupContext
-        {
-            public ExcelWorksheet Sheet { get; set; }
-            public SheetContext SheetContext { get; set; }
-            public int HeaderRowIndex { get; set; }
-            public int TopRowIndex { get; set; }
-            public int LeftColumnIndex { get; set; }
-            public int CursorRowIndex { get; set; }
-            public int CursorColumnIndex { get; set; }
-            public int RowCount { get; set; }
-            public int ColumnCount { get; set; }
-            public bool RepeatEnabled { get; set; }
-        }
-
-        class SheetContext
-        {
-            public ExcelWorksheet Sheet { get; set; }
-            public int HeaderRowCount { get; set; }
         }
     }
 }

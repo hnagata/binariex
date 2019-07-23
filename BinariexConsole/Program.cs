@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace binariex
@@ -7,10 +8,34 @@ namespace binariex
     {
         static void Main(string[] args)
         {
-            var quitOnEnd = args.Any(e => e == "-q");
-            var inputPaths = args.Where(e => e[0] != '-').ToArray();
+            var inputPaths = new List<string>();
+            var settingsPath = null as string;
+            var quitOnEnd = false;
 
-            new BinariexApp(inputPaths).Run();
+            for (int i = 0; i < args.Length; i++)
+            {
+                switch (args[i])
+                {
+                    case "-q":
+                        quitOnEnd = true;
+                        break;
+                    case "-s":
+                        if (i + 1 >= args.Length)
+                        {
+                            Console.WriteLine("Invalid arguments: -s");
+                        }
+                        else
+                        {
+                            settingsPath = args[++i];
+                        }
+                        break;
+                    default:
+                        inputPaths.Add(args[i]);
+                        break;
+                }
+            }
+
+            new BinariexApp(inputPaths, settingsPath).Run();
 
             if (!quitOnEnd)
             {

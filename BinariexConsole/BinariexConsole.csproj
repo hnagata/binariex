@@ -43,6 +43,9 @@
     <Compile Include="..\src\BinSchemaException.cs" />
     <Compile Include="..\src\BinaryReader.cs" />
     <Compile Include="..\src\Converter.cs" />
+    <Compile Include="..\src\ExcelBase.cs">
+      <Link>ExcelBase.cs</Link>
+    </Compile>
     <Compile Include="..\src\ExcelReader.cs" />
     <Compile Include="..\src\ExcelWriter.cs" />
     <Compile Include="..\src\IReader.cs" />

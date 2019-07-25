@@ -3,15 +3,18 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace binariex
 {
     class ExcelReader : ExcelBase, IReader, IDisposable
     {
-        private ExcelPackage package;
+        string path;
+        ExcelPackage package;
 
         public ExcelReader(string path)
         {
+            this.path = path;
             this.package = new ExcelPackage(new FileInfo(path));
         }
 
@@ -20,7 +23,7 @@ namespace binariex
             return package.Workbook.Worksheets[name];
         }
 
-        public void GetValue(LeafInfo leafInfo, out object raw, out object decoded)
+        public void GetValue(LeafInfo leafInfo, out object raw, out object decoded, out object output)
         {
             var ctx = this.CurrentContext;
             if (ctx == null)
@@ -33,36 +36,17 @@ namespace binariex
                 throw new EndOfStreamException();
             }
 
-            var cellText = ctx.Sheet.Cells[ctx.SheetContext.HeaderRowCount + ctx.CursorRowIndex, ctx.CursorColumnIndex].Text;
+            var cell = ctx.Sheet.Cells[ctx.SheetContext.HeaderRowCount + ctx.CursorRowIndex, ctx.CursorColumnIndex];
+            var cellText = cell.Text;
             raw = cellText;
 
-            var valueStr = cellText.EndsWith(">") ? cellText.Substring(0, cellText.LastIndexOf("<") - 1) : cellText;
-            switch (leafInfo.Type)
+            try
             {
-                case "bin":
-                    if (valueStr.EndsWith(".."))
-                    {
-                        decoded = Enumerable.Repeat((byte)0, leafInfo.Size).ToArray();
-                    }
-                    else
-                    {
-                        decoded = Enumerable.Range(0, valueStr.Length / 2)
-                            .Select(i => Convert.ToByte(valueStr.Substring(i * 2, 2), 16))
-                            .ToArray();
-                    }
-                    break;
-                case "char":
-                    decoded = valueStr;
-                    break;
-                case "int":
-                case "pbcd":
-                    decoded = Int64.Parse(valueStr);
-                    break;
-                case "uint":
-                    decoded = UInt64.Parse(valueStr);
-                    break;
-                default:
-                    throw new InvalidDataException();
+                GetDecodedValue(leafInfo, cellText, out decoded, out output);
+            }
+            catch (BinariexException exc)
+            {
+                throw exc.AddReaderPosition($@"[{Path.GetFileName(path)}]{cell.FullAddress}");
             }
 
             base.StepCursor();
@@ -71,6 +55,78 @@ namespace binariex
         public void Dispose()
         {
             this.package.Dispose();
+        }
+
+        void GetDecodedValue(LeafInfo leafInfo, string cellText, out object decoded, out object output)
+        {
+            if (cellText.EndsWith(".."))
+            {
+                if (leafInfo.Type == "bin")
+                {
+                    decoded = Enumerable.Repeat(Convert.ToByte(cellText.Substring(0, 2), 16), leafInfo.Size).ToArray();
+                    output = null;
+                    return;
+                }
+                else
+                {
+                    throw new InvalidDataException();
+                }
+            }
+
+            var m = Regex.Match(cellText, @"^(?:(.*) )?<([0-9A-Fa-f]+)>$");
+            if (m.Success)
+            {
+                decoded = m.Groups[1].Value ?? "";
+                output = GetByteArrayFromBinString(m.Groups[2].Value);
+                return;
+            }
+            output = null;
+
+            switch (leafInfo.Type)
+            {
+                case "bin":
+                    decoded = GetByteArrayFromBinString(cellText);
+                    break;
+                case "char":
+                    decoded = cellText;
+                    break;
+                case "int":
+                case "pbcd":
+                    try
+                    {
+                        decoded = Int64.Parse(cellText);
+                    }
+                    catch (Exception exc)
+                    {
+                        throw new BinariexException(exc, "reading input file", "Invalid number format: {0}", cellText != null ? cellText : "''");
+                    }
+                    break;
+                case "uint":
+                    try
+                    {
+                        decoded = UInt64.Parse(cellText);
+                    }
+                    catch (Exception exc)
+                    {
+                        throw new BinariexException(exc, "reading input file", "Invalid number format: {0}", cellText != null ? cellText : "''");
+                    }
+                    break;
+                default:
+                    throw new InvalidDataException();
+            }
+
+        }
+
+        byte[] GetByteArrayFromBinString(string binStr)
+        {
+            if (binStr.Length % 2 == 1)
+            {
+                throw new InvalidDataException();
+            }
+
+            return Enumerable.Range(0, binStr.Length / 2)
+                .Select(i => Convert.ToByte(binStr.Substring(i * 2, 2), 16))
+                .ToArray();
         }
     }
 }

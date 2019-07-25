@@ -54,7 +54,7 @@ namespace binariex
             // Nothing to do
         }
 
-        public void GetValue(LeafInfo leafInfo, out object raw, out object decoded)
+        public void GetValue(LeafInfo leafInfo, out object raw, out object decoded, out object output)
         {
             var buffer = new byte[leafInfo.Size];
             var total = 0;
@@ -64,18 +64,22 @@ namespace binariex
                 read = this.stream.Read(buffer, total, leafInfo.Size - total);
                 total += read;
             }
-            if (total < leafInfo.Size)
+            if (total == 0)
             {
                 throw new EndOfStreamException();
+            } else if (total < leafInfo.Size)
+            {
+                throw new BinariexException("reading input file", "Reached EOF before schema end.");
             }
             raw = buffer;
 
             if (!this.decodeMap.TryGetValue(leafInfo.Type, out var decode))
             {
-                throw new InvalidDataException();
+                throw new BinariexException("reading schema", "Invalid data type: {0}", leafInfo.Type);
             }
 
             decoded = decode(leafInfo, buffer);
+            output = null;
         }
 
         public void Seek(long offset)
@@ -100,26 +104,40 @@ namespace binariex
 
         object DecodeSignedInteger(LeafInfo leafInfo, byte[] raw)
         {
-            var ordered = (BitConverter.IsLittleEndian ^ leafInfo.Endian == "LE") ? raw.Reverse().ToArray() : raw;
-            var x =
-                raw.Length == 1 ? (raw[0] & 0x80) == 0 ? raw[0] & 0x7f : (raw[0] & 0x7f) - 0x80 :
-                raw.Length == 2 ? BitConverter.ToInt16(ordered, 0) :
-                raw.Length == 4 ? BitConverter.ToInt32(ordered, 0) :
-                raw.Length == 8 ? BitConverter.ToInt64(ordered, 0) :
-                throw new InvalidDataException();
-            return x;
+            try
+            {
+                var ordered = (BitConverter.IsLittleEndian ^ leafInfo.Endian == "LE") ? raw.Reverse().ToArray() : raw;
+                var x =
+                    raw.Length == 1 ? (raw[0] & 0x80) == 0 ? raw[0] & 0x7f : (raw[0] & 0x7f) - 0x80 :
+                    raw.Length == 2 ? BitConverter.ToInt16(ordered, 0) :
+                    raw.Length == 4 ? BitConverter.ToInt32(ordered, 0) :
+                    raw.Length == 8 ? BitConverter.ToInt64(ordered, 0) :
+                    throw new BinariexException("reading schema", "Invalid data length: {0}", raw.Length);
+                return x;
+            }
+            catch (Exception exc)
+            {
+                throw new BinariexException(exc, "Invalid data value");
+            }
         }
 
         object DecodeUnsignedInteger(LeafInfo leafInfo, byte[] raw)
         {
-            var ordered = (BitConverter.IsLittleEndian ^ leafInfo.Endian == "LE") ? raw.Reverse().ToArray() : raw;
-            var x =
-                raw.Length == 1 ? raw[0] :
-                raw.Length == 2 ? BitConverter.ToUInt16(ordered, 0) :
-                raw.Length == 4 ? BitConverter.ToUInt32(ordered, 0) :
-                raw.Length == 8 ? BitConverter.ToUInt64(ordered, 0) :
-                throw new InvalidDataException();
-            return x;
+            try
+            {
+                var ordered = (BitConverter.IsLittleEndian ^ leafInfo.Endian == "LE") ? raw.Reverse().ToArray() : raw;
+                var x =
+                    raw.Length == 1 ? raw[0] :
+                    raw.Length == 2 ? BitConverter.ToUInt16(ordered, 0) :
+                    raw.Length == 4 ? BitConverter.ToUInt32(ordered, 0) :
+                    raw.Length == 8 ? BitConverter.ToUInt64(ordered, 0) :
+                    throw new BinariexException("reading schema", "Invalid data length: {0}", raw.Length);
+                return x;
+            }
+            catch (Exception exc)
+            {
+                throw new BinariexException(exc, "Invalid data value");
+            }
         }
 
         object DecodePBCD(LeafInfo leafInfo, byte[] raw)

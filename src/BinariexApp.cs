@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -46,11 +47,11 @@ namespace binariex
             {
                 WriteErrorLog(exc);
             }
-            //catch (Exception exc)
-            //{
-            //    logger.Error("Unexpected error occurred. Notify the developers.");
-            //    logger.Error(exc);
-            //}
+            catch (Exception exc)
+            {
+                logger.Error("Unexpected error occurred. Notify the developers.");
+                logger.Debug(exc);
+            }
         }
 
         void LoadSettings()
@@ -147,7 +148,7 @@ namespace binariex
             }
             catch (BinariexException exc)
             {
-                WriteErrorLog(exc.AddInputPath(inputPath));
+                WriteErrorLog(exc);
                 logger.Warn("Skipped. ({0})", Path.GetFileName(inputPath));
             }
         }
@@ -157,23 +158,8 @@ namespace binariex
             var schemaPath = SelectSchema(inputPath);
             if (!File.Exists(schemaPath))
             {
-                throw new BinariexException("finding schema file", "Appropriate schema file not found.").AddInputPath(inputPath);
+                throw new BinariexException("finding schema file", "Schema file not found.").AddSchemaPath(schemaPath);
             }
-
-            try
-            {
-                RunWithSingleFile(inputPath, schemaPath);
-            }
-            catch (BinariexException exc)
-            {
-                throw exc.AddSchemaPath(schemaPath);
-            }
-        }
-
-        void RunWithSingleFile(string inputPath, string schemaPath)
-        {
-
-            var schemaDoc = LoadSchemaDoc(schemaPath);
 
             var outputPathRepr = this.settings["outputPath"] as string;
             var outputPath = Regex.Replace(outputPathRepr, @"\{.+?\}", m =>
@@ -181,16 +167,47 @@ namespace binariex
                 m.Value == "{sourceName}" ? Path.GetFileName(inputPath) :
                 m.Value == "{sourceBaseName}" ? Path.GetFileNameWithoutExtension(inputPath) :
                 m.Value == "{sourceExtension}" ? Path.GetExtension(inputPath) :
+                m.Value == "{targetExtension}" ? inputPath.EndsWith(".xlsx") ? ".bin" : ".xlsx" :
                 m.Value
             );
+            if (File.Exists(outputPath))
+            {
+                try
+                {
+                    using (var tmpStream = File.Open(outputPath, FileMode.Open, FileAccess.Read, FileShare.Write))
+                    {
+                    }
+                }
+                catch (IOException exc)
+                {
+                    throw new BinariexException(exc, "writing to file", "Output file is locked.").AddOutputPath(outputPath);
+                }
+            }
+
+            try
+            {
+                RunWithSingleFile(inputPath, outputPath, schemaPath);
+            }
+            catch (BinariexException exc)
+            {
+                throw exc.AddInputPath(inputPath).AddOutputPath(outputPath).AddSchemaPath(schemaPath);
+            }
+        }
+
+        void RunWithSingleFile(string inputPath, string outputPath, string schemaPath)
+        {
+            var schemaDoc = LoadSchemaDoc(schemaPath);
 
             if (inputPath.EndsWith(".xlsx"))
             {
                 using (var reader = new ExcelReader(inputPath))
                 {
-                    using (var writer = new BinaryWriter(outputPath.Replace("{targetExtension}", ".bin")))
+                    using (var writer = new BinaryWriter(outputPath))
                     {
-                        new Converter(reader, writer, schemaDoc).Run();
+                        using (var converter = new Converter(reader, writer, schemaDoc))
+                        {
+                            converter.Run();
+                        }
                     }
                 }
             }
@@ -198,9 +215,12 @@ namespace binariex
             {
                 using (var reader = new BinaryReader(inputPath))
                 {
-                    using (var writer = new ExcelWriter(outputPath.Replace("{targetExtension}", ".xlsx"), this.settings["excel"]))
+                    using (var writer = new ExcelWriter(outputPath, this.settings["excel"]))
                     {
-                        new Converter(reader, writer, schemaDoc).Run();
+                        using (var converter = new Converter(reader, writer, schemaDoc))
+                        {
+                            converter.Run();
+                        }
                         writer.Save();
                     }
                 }
@@ -237,7 +257,25 @@ namespace binariex
             logger.Error(exc.Message ?? exc.InnerException.Message, exc.MessageParams);
             if (exc.InputPath != null)
             {
-                logger.Error("  Input:  {0}", exc.InputPath);
+                if (exc.ReaderPosition != null)
+                {
+                    logger.Error("  Input:  {0} ({1})", exc.InputPath, exc.ReaderPosition);
+                }
+                else
+                {
+                    logger.Error("  Input:  {0}", exc.InputPath);
+                }
+            }
+            if (exc.OutputPath != null)
+            {
+                if (exc.WriterPosition != null)
+                {
+                    logger.Error("  Output: {0} ({1})", exc.OutputPath, exc.WriterPosition);
+                }
+                else
+                {
+                    logger.Error("  Output: {0}", exc.OutputPath);
+                }
             }
             if (exc.SchemaLineInfo != null)
             {
@@ -246,18 +284,13 @@ namespace binariex
                     exc.SchemaPath, exc.SchemaLineInfo.LineNumber, exc.SchemaLineInfo.LinePosition
                 );
             }
-            if (exc.ReaderPosition != null)
-            {
-                logger.Error("  Reader: {0}", exc.ReaderPosition);
-            }
-            if (exc.WriterPosition != null)
-            {
-                logger.Error("  Writer: {0}", exc.WriterPosition);
-            }
             if (exc.InnerException != null && exc.InnerException.Message != exc.Message)
             {
                 logger.Error("Details:");
                 logger.Error("{0}: {1}", exc.InnerException.GetType(), exc.InnerException.Message);
+            }
+            if (exc.InnerException != null)
+            {
                 logger.Debug(exc.InnerException);
             }
         }

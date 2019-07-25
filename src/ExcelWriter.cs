@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace binariex
 {
@@ -13,13 +14,13 @@ namespace binariex
         const int MAX_NUM_CHAR_IN_LINE = 254;
 
         readonly dynamic settings;
-        readonly FileInfo outputFile;
+        readonly string outputPath;
 
         readonly ExcelPackage package;
 
         public ExcelWriter(string path, dynamic settings)
         {
-            this.outputFile = new FileInfo(path);
+            this.outputPath = path;
             this.settings = settings;
 
             this.package = new ExcelPackage();
@@ -87,7 +88,7 @@ namespace binariex
             return package.Workbook.Worksheets[name] ?? package.Workbook.Worksheets.Add(name);
         }
 
-        public void SetValue(LeafInfo leafInfo, object raw, object decoded)
+        public void SetValue(LeafInfo leafInfo, object raw, object decoded, object output)
         {
             var ctx = this.CurrentContext;
             if (ctx == null)
@@ -98,7 +99,9 @@ namespace binariex
             SetHeaderName(ctx, ctx.HeaderRowIndex + 1, ctx.CursorColumnIndex, leafInfo.Name);
 
             var rawRepr = string.Join("", (raw as byte[]).Select(e => e.ToString("X2")));
-            var totalRepr = raw != decoded ? $@"{decoded.ToString()} <{rawRepr}>" : rawRepr;
+            var totalRepr = raw == decoded ? rawRepr :
+                decoded.ToString() == "" ? $@"<{rawRepr}>" :
+                $@"{decoded.ToString()} <{rawRepr}>";
             var dispRepr = totalRepr.Length > MAX_NUM_CHAR_IN_LINE ? totalRepr.Substring(0, MAX_NUM_CHAR_IN_LINE - 2) + ".." : totalRepr;
 
             var cell = ctx.Sheet.Cells[ctx.SheetContext.HeaderRowCount + ctx.CursorRowIndex, ctx.CursorColumnIndex];
@@ -120,10 +123,24 @@ namespace binariex
 
                 sheet.Cells.Style.Font.Name = this.settings["fontFamily"];
 
+                for (int r = 1; r <= sheet.Dimension.Rows; r++)
+                {
+                    sheet.Row(r).Height = 15;
+                }
+
                 if (this.settings["enableAutoFilter"] == "true")
                 {
                     sheet.Cells[sheetCtx.HeaderRowCount, 1, sheet.Dimension.Rows, sheet.Dimension.Columns].AutoFilter = true;
                 }
+
+                if (this.settings["freezePanes"] == "true")
+                {
+                    sheet.View.FreezePanes(sheetCtx.HeaderRowCount + 1, 1);
+                }
+
+                var dataRange = sheet.Cells[sheetCtx.HeaderRowCount + 1, 1, sheet.Dimension.Rows, sheet.Dimension.Columns];
+                dataRange.Style.WrapText = true;
+                dataRange.Style.VerticalAlignment = ExcelVerticalAlignment.Top;
 
                 var headerRange = sheet.Cells[1, 1, sheetCtx.HeaderRowCount, sheet.Dimension.Columns];
                 headerRange.Style.Fill.PatternType = ExcelFillStyle.Solid;
@@ -160,7 +177,7 @@ namespace binariex
                 var rightOutColumnIndex = sheet.Dimension.Columns + 1;
                 sheet.Cells[1, rightOutColumnIndex, sheetCtx.HeaderRowCount, rightOutColumnIndex].Value = HEADER_MARKER;
             }
-            this.package.SaveAs(outputFile);
+            this.package.SaveAs(new FileInfo(this.outputPath));
         }
 
         public void Dispose()

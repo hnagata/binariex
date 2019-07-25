@@ -8,7 +8,7 @@
         void PopSheet();
         void PushGroup(string name);
         void PushSheet(string name);
-        void SetValue(LeafInfo leafInfo, object raw, object decoded);
+        void SetValue(LeafInfo leafInfo, object raw, object decoded, object output);
         void Seek(long offset);
     }
 }

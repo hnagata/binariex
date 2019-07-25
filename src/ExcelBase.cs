@@ -86,7 +86,7 @@ namespace binariex
         {
             if (this.groupCtxStack.Count == 0)
             {
-                throw new InvalidOperationException();
+                throw new BinariexException("reading schema", "Cannot put group out of sheet.");
             }
             var parentCtx = this.groupCtxStack.Peek();
 
@@ -110,7 +110,7 @@ namespace binariex
             {
                 if (parentCtx.Sheet.Name == name)
                 {
-                    throw new InvalidOperationException();
+                    throw new BinariexException("reading schema", "Cannot put sheet recursively.");
                 }
             }
 

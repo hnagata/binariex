@@ -55,14 +55,26 @@ namespace binariex
             // Nothing to do
         }
 
-        public void SetValue(LeafInfo leafInfo, object raw, object decoded)
+        public void SetValue(LeafInfo leafInfo, object raw, object decoded, object output)
         {
-            if (!this.encodeMap.TryGetValue(leafInfo.Type, out var encode))
+            var encoded = null as byte[];
+            if (output != null)
             {
-                throw new InvalidDataException();
+                encoded = output as byte[];
+            }
+            else if (decoded is byte[])
+            {
+                encoded = decoded as byte[];
+            }
+            else
+            {
+                if (!this.encodeMap.TryGetValue(leafInfo.Type, out var encode))
+                {
+                    throw new InvalidDataException();
+                }
+                encoded = encode(leafInfo, decoded);
             }
 
-            var encoded = encode(leafInfo, decoded);
             if (encoded.Length != leafInfo.Size)
             {
                 throw new InvalidDataException();

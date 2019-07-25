@@ -9,6 +9,7 @@ namespace binariex
         public string Stage { get; private set; }
         public object[] MessageParams { get; private set; }
         public string InputPath { get; private set; }
+        public string OutputPath { get; private set; }
         public string SchemaPath { get; private set; }
         public IXmlLineInfo SchemaLineInfo { get; private set; }
         public string ReaderPosition { get; private set; }
@@ -19,13 +20,13 @@ namespace binariex
             this.Stage = stage;
         }
 
-        public BinariexException(string stage, string message, params string[] messageParams) : base(message)
+        public BinariexException(string stage, string message, params object[] messageParams) : base(message)
         {
             this.Stage = stage;
             this.MessageParams = messageParams;
         }
 
-        public BinariexException(Exception inner, string stage, string message, params string[] messageParams) : base(message, inner)
+        public BinariexException(Exception inner, string stage, string message, params object[] messageParams) : base(message, inner)
         {
             this.Stage = stage;
             this.MessageParams = messageParams;
@@ -34,6 +35,12 @@ namespace binariex
         public BinariexException AddInputPath(string path)
         {
             this.InputPath = path;
+            return this;
+        }
+
+        public BinariexException AddOutputPath(string path)
+        {
+            this.OutputPath = path;
             return this;
         }
 

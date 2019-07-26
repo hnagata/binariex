@@ -17,15 +17,10 @@ namespace binariex
         static readonly NLog.Logger logger = NLog.LogManager.GetCurrentClassLogger();
 
         readonly IEnumerable<string> inputPaths;
-        readonly string settingsPath;
+        string settingsPath;
 
         dynamic settings;
         Dictionary<Glob, string> schemaMap = new Dictionary<Glob, string>();
-
-        public BinariexApp(IEnumerable<string> inputPaths)
-        {
-            this.inputPaths = inputPaths;
-        }
 
         public BinariexApp(IEnumerable<string> inputPaths, string settingsPath)
         {
@@ -56,8 +51,11 @@ namespace binariex
 
         void LoadSettings()
         {
-            var exeDir = Directory.GetParent(Assembly.GetExecutingAssembly().Location).FullName;
-            var settingsPath = this.settingsPath ?? Path.Combine(exeDir, SETTINGS_NAME);
+            if (settingsPath == null)
+            {
+                var exeDir = Directory.GetParent(Assembly.GetExecutingAssembly().Location).FullName;
+                this.settingsPath = Path.Combine(exeDir, SETTINGS_NAME);
+            }
             if (!File.Exists(settingsPath))
             {
                 throw new BinariexException("loading setting file", "Setting file not found.");
@@ -91,7 +89,8 @@ namespace binariex
             var schemaMapSection = this.settings["schemaMapping"] as Dictionary<dynamic, dynamic>;
             foreach (var entry in schemaMapSection)
             {
-                this.schemaMap.Add(new Glob(entry.Key), entry.Value);
+                var patternStr = (entry.Key as string).Contains("\\") ? entry.Key : Path.Combine("**", entry.Key);
+                this.schemaMap.Add(new Glob(patternStr), entry.Value);
             }
         }
 
@@ -156,6 +155,10 @@ namespace binariex
         void RunWithSingleFile(string inputPath)
         {
             var schemaPath = SelectSchema(inputPath);
+            schemaPath = Regex.Replace(schemaPath, @"\{.+?\}", m =>
+                m.Value == "{settingsDirPath}" ? Path.GetDirectoryName(this.settingsPath) :
+                m.Value
+            );
             if (!File.Exists(schemaPath))
             {
                 throw new BinariexException("finding schema file", "Schema file not found.").AddSchemaPath(schemaPath);
@@ -233,7 +236,8 @@ namespace binariex
             {
                 if (entry.Key.IsMatch(path))
                 {
-                    return entry.Value;
+                    return Path.IsPathRooted(entry.Value) ?
+                        entry.Value : Path.Combine(Path.GetDirectoryName(this.settingsPath), entry.Value);
                 }
             }
             throw new BinariexException("finding schema file", "Appropriate schema file not found.").AddInputPath(path);
@@ -277,12 +281,19 @@ namespace binariex
                     logger.Error("  Output: {0}", exc.OutputPath);
                 }
             }
-            if (exc.SchemaLineInfo != null)
+            if (exc.SchemaPath != null)
             {
-                logger.Error(
-                    "  Schema: {0} (ln.{1}:{2})",
-                    exc.SchemaPath, exc.SchemaLineInfo.LineNumber, exc.SchemaLineInfo.LinePosition
-                );
+                if (exc.SchemaLineInfo != null)
+                {
+                    logger.Error(
+                        "  Schema: {0} (ln.{1}:{2})",
+                        exc.SchemaPath, exc.SchemaLineInfo.LineNumber, exc.SchemaLineInfo.LinePosition
+                    );
+                }
+                else
+                {
+                    logger.Error("  Schema: {0}", exc.SchemaPath);
+                }
             }
             if (exc.InnerException != null && exc.InnerException.Message != exc.Message)
             {

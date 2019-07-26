@@ -9,5 +9,6 @@ namespace binariex
         public int Size { get; set; }
         public Encoding Encoding { get; set; }
         public string Endian { get; set; }
+        public bool HasUserCode { get; set; }
     }
 }

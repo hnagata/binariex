@@ -38,7 +38,7 @@
     </if>
     <sheet name="Data">
       <group name="Row" repeat="eval:height">
-        <leaf name="eval:`Column${j}`" size="eval:Math.max(bitCount / 8, 1)" type="bin" repeat="eval:width / (Math.max(8 / bitCount, 1))" indexLabel="j" flat="1" />
+        <leaf name="eval:'Column'+j" size="eval:Math.max(bitCount / 8, 1)" type="bin" repeat="eval:width / (Math.max(8 / bitCount, 1))" indexLabel="j" flat="1" />
       </group>
     </sheet>
   </data>

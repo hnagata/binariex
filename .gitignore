@@ -1,5 +1,6 @@
 .vs
 bin
+dist
 obj
 packages
 *.user

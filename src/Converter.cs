@@ -1,6 +1,5 @@
-﻿using Microsoft.ClearScript;
-using Microsoft.ClearScript.JavaScript;
-using Microsoft.ClearScript.V8;
+﻿using Jint;
+using Jint.Native;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -21,7 +20,6 @@ namespace binariex
         readonly IReader reader;
         readonly IWriter writer;
         readonly XDocument schemaDoc;
-        readonly V8ScriptEngine v8Engine;
 
         readonly bool forward;
 
@@ -29,6 +27,8 @@ namespace binariex
         readonly string endian;
 
         readonly Dictionary<string, UserCode> codeMap = new Dictionary<string, UserCode>();
+
+        readonly Engine jsEngine = new Engine();
 
         public Converter(IReader reader, IWriter writer, XDocument schemaDoc)
         {
@@ -56,8 +56,6 @@ namespace binariex
             {
                 throw exc.AddSchemaElement(schemaDoc.Root);
             }
-
-            this.v8Engine = new V8ScriptEngine();
         }
 
         public void Run()
@@ -71,7 +69,7 @@ namespace binariex
 
         public void Dispose()
         {
-            this.v8Engine.Dispose();
+            // Nothing to do
         }
 
         void ParseDefs(XElement elem)
@@ -80,7 +78,7 @@ namespace binariex
             {
                 foreach (var scriptElem in elem.Elements("script"))
                 {
-                    this.v8Engine.Execute(scriptElem.Value);
+                    this.jsEngine.Execute(scriptElem.Value);
                 }
             }
             catch (Exception exc)
@@ -91,7 +89,7 @@ namespace binariex
             foreach (var codeElem in elem.Elements("code"))
             {
                 var name = GetAttr(codeElem, "name");
-                var codeObj = UserCode.Create(codeElem, this.forward, this.v8Engine);
+                var codeObj = UserCode.Create(codeElem, this.forward, this.jsEngine);
                 this.codeMap.Add(name, codeObj);
             }
         }
@@ -129,7 +127,7 @@ namespace binariex
 
                 if (indexLabel != null)
                 {
-                    this.v8Engine.Script[indexLabel] = i + 1;
+                    this.jsEngine.SetValue(indexLabel, i);
                 }
 
                 if (!this.parseElemMap.TryGetValue(elem.Name.LocalName, out var parseElem))
@@ -222,6 +220,7 @@ namespace binariex
                 Size = EvaluateExpr(GetAttr(elem, "size")) as int? ?? 0,
                 Encoding = elem.Attribute("encoding") != null ? GetEncoding(elem.Attribute("encoding").Value) : this.encoding,
                 Endian = elem.Attribute("endian") != null ? GetEndian(EvaluateExpr(elem.Attribute("endian").Value) as string) : this.endian,
+                HasUserCode = elem.Attribute("code") != null
             };
             if (leafInfo.Size <= 0)
             {
@@ -242,7 +241,7 @@ namespace binariex
             var label = elem.Attribute("label")?.Value;
             if (label != null)
             {
-                this.v8Engine.Script[label] = raw is byte[] ? secondObj : firstObj;
+                this.jsEngine.SetValue(label, raw is byte[] ? secondObj : firstObj);
             }
         }
 
@@ -263,22 +262,6 @@ namespace binariex
             catch (Exception exc)
             {
                 throw new BinariexException(exc, "reading input file");
-            }
-        }
-
-        void SetValueSafe(LeafInfo leafInfo, object raw, object secondObj, object output)
-        {
-            try
-            {
-                this.writer.SetValue(leafInfo, raw, secondObj, output);
-            }
-            catch (BinariexException)
-            {
-                throw;
-            }
-            catch (Exception exc)
-            {
-                throw new BinariexException(exc, "writing to file");
             }
         }
 
@@ -308,6 +291,22 @@ namespace binariex
             return secondObj;
         }
 
+        void SetValueSafe(LeafInfo leafInfo, object raw, object secondObj, object output)
+        {
+            try
+            {
+                this.writer.SetValue(leafInfo, raw, secondObj, output);
+            }
+            catch (BinariexException)
+            {
+                throw;
+            }
+            catch (Exception exc)
+            {
+                throw new BinariexException(exc, "writing to file");
+            }
+        }
+
         object EvaluateExpr(string expr)
         {
             return expr == null ? null :
@@ -320,7 +319,7 @@ namespace binariex
         {
             try
             {
-                return this.v8Engine.Evaluate(expr);
+                return this.jsEngine.Execute(expr).GetCompletionValue().ToObject();
             }
             catch (Exception exc)
             {
@@ -332,8 +331,6 @@ namespace binariex
         {
             return !(
                 value == null ||
-                value is Undefined ||
-                value is VoidResult ||
                 value.Equals("") ||
                 value.Equals(false) ||
                 value.Equals(0)
@@ -372,24 +369,16 @@ namespace binariex
             readonly Dictionary<object, object> codeMap;
             readonly object defaultValue;
 
-            readonly V8Script codeScript;
-            readonly V8ScriptEngine v8Engine;
+            readonly Engine jsEngine;
+            readonly JsValue codeScript;
 
-            readonly dynamic createJSByteArray;
-
-            public static UserCode Create(XElement codeElem, bool forward, V8ScriptEngine v8Engine)
+            public static UserCode Create(XElement codeElem, bool forward, Engine jsEngine)
             {
                 var encodeType = GetAttr(codeElem, "type");
                 var codeMap = new Dictionary<object, object>();
                 foreach (XElement valElem in codeElem.Elements("codeval"))
                 {
-                    var encodedRepr = GetAttr(valElem, "encoded");
-                    var encoded =
-                        encodeType == "bin" && !forward ? Enumerable.Range(0, encodedRepr.Length / 2).Select(i => System.Convert.ToByte(encodedRepr.Substring(i * 2, 2), 16)).ToArray() :
-                        encodeType == "char" ? Regex.Replace(encodedRepr, @"\\x(\d{1,4})", m => char.ConvertFromUtf32(System.Convert.ToInt32(m.Groups[1].Value, 16))) :
-                        encodeType == "int" ? long.Parse(encodedRepr) as object :
-                        encodeType == "uint" ? ulong.Parse(encodedRepr) as object :
-                        encodedRepr;
+                    var encoded = ParseEncodedRepr(GetAttr(valElem, "encoded"), encodeType, forward);
                     var decoded = GetAttr(valElem, "decoded");
 
                     var key = forward ? encoded : decoded;
@@ -400,21 +389,33 @@ namespace binariex
                     }
                 }
 
+                var codeScript = null as JsValue;
                 var scriptElem = codeElem.Element(forward ? "decode" : "encode");
-                var codeScript = scriptElem != null ? GetCompiledScript(v8Engine, scriptElem.Value) : null;
+                if (scriptElem != null)
+                {
+                    try
+                    {
+                        codeScript = jsEngine.Execute($@"(function($input) {{{scriptElem.Value}}})").GetCompletionValue();
+                    }
+                    catch (Exception exc)
+                    {
+                        throw new BinariexException(exc, "reading code definition").AddSchemaElement(scriptElem);
+                    }
+                }
 
-                var defaultValue = codeElem.Element("default")?.Attribute(forward ? "decoded" : "encoded")?.Value;
+                var defaultValue = forward ?
+                    codeElem.Element("default")?.Attribute("decoded")?.Value :
+                    ParseEncodedRepr(codeElem.Element("default")?.Attribute("encoded")?.Value, encodeType, forward);
 
-                return new UserCode(codeMap, defaultValue, codeScript, v8Engine);
+                return new UserCode(codeMap, defaultValue, jsEngine, codeScript);
             }
 
-            UserCode(Dictionary<object, object> codeMap, object defaultValue, V8Script codeScript, V8ScriptEngine v8Engine)
+            UserCode(Dictionary<object, object> codeMap, object defaultValue, Engine jsEngine, JsValue codeScript)
             {
                 this.codeMap = codeMap;
                 this.defaultValue = defaultValue;
+                this.jsEngine = jsEngine;
                 this.codeScript = codeScript;
-                this.v8Engine = v8Engine;
-                this.createJSByteArray = this.v8Engine.Evaluate("(function(len) { return new Uint8Array(len); }).valueOf();");
             }
 
             public object Convert(object input)
@@ -432,12 +433,11 @@ namespace binariex
                 {
                     try
                     {
-                        var inputJS = input is byte[]? CreateJSByteArray(input as byte[]) : input;
-                        this.v8Engine.Script["$input"] = inputJS;
-                        var converted = this.v8Engine.Evaluate(this.codeScript);
-                        if (!(converted is Undefined))
+                        var inputJsValue = JsValue.FromObject(jsEngine, input);
+                        var converted = this.codeScript.Invoke(inputJsValue);
+                        if (!(converted.IsUndefined()))
                         {
-                            return converted is ITypedArray<byte> ? (converted as ITypedArray<byte>).ToArray() : converted;
+                            return converted.ToObject();
                         }
                     }
                     catch (Exception exc)
@@ -449,23 +449,15 @@ namespace binariex
                 return this.defaultValue;
             }
 
-            static V8Script GetCompiledScript(V8ScriptEngine v8Engine, string script)
+            static object ParseEncodedRepr(string encodedRepr, string encodeType, bool forward)
             {
-                try
-                {
-                    return v8Engine.Compile(script);
-                }
-                catch (Exception exc)
-                {
-                    throw new BinariexException(exc, "reading code definition");
-                }
-            }
-
-            ITypedArray<byte> CreateJSByteArray(byte[] hostArray)
-            {
-                var jsArray = this.createJSByteArray(hostArray.Length) as ITypedArray<byte>;
-                jsArray.WriteBytes(hostArray, 0, (ulong)hostArray.LongLength, 0);
-                return jsArray;
+                return
+                    encodedRepr == null ? null :
+                    encodeType == "bin" && !forward ? Enumerable.Range(0, encodedRepr.Length / 2).Select(i => System.Convert.ToByte(encodedRepr.Substring(i * 2, 2), 16)).ToArray() :
+                    encodeType == "char" ? Regex.Replace(encodedRepr, @"\\x(\d{1,4})", m => char.ConvertFromUtf32(System.Convert.ToInt32(m.Groups[1].Value, 16))) :
+                    encodeType == "int" ? long.Parse(encodedRepr) as object :
+                    encodeType == "uint" ? ulong.Parse(encodedRepr) as object :
+                    encodedRepr;
             }
         }
     }

@@ -129,7 +129,7 @@ namespace binariex
 
         byte[] EncodePBCD(LeafInfo leafInfo, object decoded)
         {
-            var decodedInt = (long)decoded;
+            var decodedInt = Convert.ToInt64(decoded);
             byte[] buffer = new byte[leafInfo.Size];
 
             buffer[leafInfo.Size - 1] = (byte)(decodedInt >= 0 ? 0x0c : 0x0d);

@@ -9,11 +9,14 @@ namespace binariex
 {
     class ExcelReader : ExcelBase, IReader, IDisposable
     {
-        string path;
-        ExcelPackage package;
+        readonly dynamic settings;
 
-        public ExcelReader(string path)
+        readonly string path;
+        readonly ExcelPackage package;
+
+        public ExcelReader(string path, dynamic settings)
         {
+            this.settings = settings;
             this.path = path;
             this.package = new ExcelPackage(new FileInfo(path));
         }
@@ -76,11 +79,24 @@ namespace binariex
             var m = Regex.Match(cellText, @"^(?:(.*) )?<([0-9A-Fa-f]+)>$");
             if (m.Success)
             {
-                decoded = m.Groups[1].Value ?? "";
-                output = GetByteArrayFromBinString(m.Groups[2].Value);
-                return;
+                if (this.settings["bypassIfRawAvailable"] as string == "true")
+                {
+                    decoded = m.Groups[1].Value ?? "";
+                    output = GetByteArrayFromBinString(m.Groups[2].Value);
+                    return;
+                }
+                else
+                {
+                    cellText = m.Groups[1].Value;
+                }
             }
             output = null;
+
+            if (leafInfo.HasUserCode)
+            {
+                decoded = cellText;
+                return;
+            }
 
             switch (leafInfo.Type)
             {
@@ -98,7 +114,7 @@ namespace binariex
                     }
                     catch (Exception exc)
                     {
-                        throw new BinariexException(exc, "reading input file", "Invalid number format: {0}", cellText != null ? cellText : "''");
+                        throw new BinariexException(exc, "reading input file", "Invalid number format: {0}", cellText ?? "''");
                     }
                     break;
                 case "uint":
@@ -108,7 +124,7 @@ namespace binariex
                     }
                     catch (Exception exc)
                     {
-                        throw new BinariexException(exc, "reading input file", "Invalid number format: {0}", cellText != null ? cellText : "''");
+                        throw new BinariexException(exc, "reading input file", "Invalid number format: {0}", cellText ?? "''");
                     }
                     break;
                 default:

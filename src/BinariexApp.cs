@@ -203,7 +203,7 @@ namespace binariex
 
             if (inputPath.EndsWith(".xlsx"))
             {
-                using (var reader = new ExcelReader(inputPath))
+                using (var reader = new ExcelReader(inputPath, this.settings["excel"]))
                 {
                     using (var writer = new BinaryWriter(outputPath))
                     {

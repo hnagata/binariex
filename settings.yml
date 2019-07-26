@@ -1,7 +1,6 @@
 ﻿outputPath: "{sourceDirPath}\\{sourceName}{targetExtension}"
 schemaMapping:
-  "*.bmp": ..\..\..\Sample\bmp.xml
-  "*.bmp.xlsx": ..\..\..\Sample\bmp.xml
+  "*.bmp*": ..\..\..\Sample\bmp.xml
 excel:
   fontFamily: Consolas
   headerColor: SkyBlue

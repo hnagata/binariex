@@ -9,7 +9,7 @@
     </sheet>
     <sheet name="Bitmap Information Header">
       <leaf name="hSize" size="4" type="uint" label="hSize" />
-      <if cond="hSize == 40">
+      <if cond="hSize >= 40">
         <leaf name="biWidth" size="4" type="int" label="width" />
         <leaf name="biHeight" size="4" type="int" label="height" />
         <leaf name="biPlanes" size="2" type="uint" />
@@ -20,6 +20,7 @@
         <leaf name="biYPixPerMeter" size="4" type="int" />
         <leaf name="biClrUsed" size="4" type="uint" />
         <leaf name="biCirImportant" size="4" type="uint" />
+        <seek offset="eval:hSize - 40" />
       </if>
       <if cond="hSize == 12">
         <leaf name="bcWidth" size="2" type="int" label="width" />
@@ -29,7 +30,7 @@
       </if>
     </sheet>
     <if cond="bitCount == 1 || bitCount == 4 || bitCount == 8">
-      <sheet name="Palette Data"  repeat="eval:math.pow(2, bitCount)">
+      <sheet name="Palette Data"  repeat="eval:Math.pow(2, bitCount)">
         <leaf name="rgbBlue" size="1" type="uint" />
         <leaf name="rgbGreen" size="1" type="uint" />
         <leaf name="rgbRed" size="1" type="uint" />

@@ -136,14 +136,11 @@ namespace binariex
 
         void RunWithSingleFileSafe(string inputPath)
         {
+            logger.Info("Start converting: {0}", inputPath);
             try
             {
-                logger.Info("Start converting...");
-                logger.Info("  Path: {0}", inputPath);
-
                 RunWithSingleFile(inputPath);
-
-                logger.Info("Finished.");
+                logger.Warn("Finished.");
             }
             catch (BinariexException exc)
             {
@@ -163,6 +160,7 @@ namespace binariex
             {
                 throw new BinariexException("finding schema file", "Schema file not found.").AddSchemaPath(schemaPath);
             }
+            logger.Info("  Schema file: {0}", schemaPath);
 
             var outputPathRepr = this.settings["outputPath"] as string;
             var outputPath = Regex.Replace(outputPathRepr, @"\{.+?\}", m =>
@@ -179,6 +177,7 @@ namespace binariex
                 {
                     using (var tmpStream = File.Open(outputPath, FileMode.Open, FileAccess.Read, FileShare.Write))
                     {
+                        // Nothing to do
                     }
                 }
                 catch (IOException exc)
@@ -186,6 +185,7 @@ namespace binariex
                     throw new BinariexException(exc, "writing to file", "Output file is locked.").AddOutputPath(outputPath);
                 }
             }
+            logger.Info("  Output file: {0}", outputPath);
 
             try
             {

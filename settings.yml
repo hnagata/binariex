@@ -6,3 +6,4 @@ excel:
   headerColor: SkyBlue
   enableAutoFilter: true
   freezePanes: true
+  bypassIfRawAvailable: false

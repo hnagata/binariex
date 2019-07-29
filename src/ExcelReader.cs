@@ -55,6 +55,16 @@ namespace binariex
             base.StepCursor();
         }
 
+        public long GetReadPosition()
+        {
+            return this.SheetContextMap.Values.Sum(ctx => ctx.CursorRowIndex - 1);
+        }
+
+        public long GetTotalSize()
+        {
+            return this.SheetContextMap.Values.Sum(ctx => ctx.Sheet.Dimension.Rows - ctx.HeaderRowCount);
+        }
+
         public void Dispose()
         {
             this.package.Dispose();

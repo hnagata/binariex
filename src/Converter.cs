@@ -64,7 +64,14 @@ namespace binariex
             {
                 ParseDefs(schemaDoc.Root.Element("defs"));
             }
+
             ParseChildren(schemaDoc.Root.Element("data"));
+
+            long remains = this.reader.GetTotalSize() - this.reader.GetReadPosition();
+            if (remains > 0)
+            {
+                logger.Warn("Reached schema end but input data remains. (size: {0})", remains);
+            }
         }
 
         public void Dispose()
@@ -109,8 +116,10 @@ namespace binariex
         void ParseElement(XElement elem)
         {
             var numRepeatRepr = elem.Attribute("repeat")?.Value;
-            var numRepeat = numRepeatRepr == "*" ? Int32.MaxValue :
-                EvaluateExpr(numRepeatRepr) as int? ?? 1;
+            var numRepeat = 
+                numRepeatRepr == null ? 1 :
+                numRepeatRepr == "*" ? Int32.MaxValue :
+                Convert.ToInt32(EvaluateExpr(numRepeatRepr));
             var indexLabel = elem.Attribute("indexLabel")?.Value;
             bool flat = numRepeat == 1 || IsJSTrue(EvaluateExpr(elem.Attribute("flat")?.Value));
             if (!flat)
@@ -176,11 +185,7 @@ namespace binariex
 
         void ParseSeek(XElement elem)
         {
-            var offsetRepr = GetAttr(elem, "offset");
-            if (!long.TryParse(offsetRepr, out var offset))
-            {
-                throw new BinariexException("reading schema", "Invalid number format: {0}", offsetRepr);
-            }
+            var offset = Convert.ToInt64(EvaluateJSExpr(GetAttr(elem, "offset")));
             try
             {
                 this.reader.Seek(offset);
@@ -217,7 +222,7 @@ namespace binariex
             var leafInfo = new LeafInfo {
                 Name = EvaluateExpr(GetAttr(elem, "name")) as string,
                 Type = EvaluateExpr(GetAttr(elem, "type")) as string,
-                Size = EvaluateExpr(GetAttr(elem, "size")) as int? ?? 0,
+                Size = Convert.ToInt32(EvaluateExpr(GetAttr(elem, "size"))),
                 Encoding = elem.Attribute("encoding") != null ? GetEncoding(elem.Attribute("encoding").Value) : this.encoding,
                 Endian = elem.Attribute("endian") != null ? GetEndian(EvaluateExpr(elem.Attribute("endian").Value) as string) : this.endian,
                 HasUserCode = elem.Attribute("code") != null

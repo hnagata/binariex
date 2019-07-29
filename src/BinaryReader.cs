@@ -87,6 +87,16 @@ namespace binariex
             this.stream.Seek(offset, SeekOrigin.Current);
         }
 
+        public long GetReadPosition()
+        {
+            return this.stream.Position;
+        }
+
+        public long GetTotalSize()
+        {
+            return this.stream.Length;
+        }
+
         public void Dispose()
         {
             this.stream.Dispose();

@@ -72,32 +72,20 @@ namespace binariex
 
         void GetDecodedValue(LeafInfo leafInfo, string cellText, out object decoded, out object output)
         {
-            if (cellText.EndsWith(".."))
-            {
-                if (leafInfo.Type == "bin")
-                {
-                    decoded = Enumerable.Repeat(Convert.ToByte(cellText.Substring(0, 2), 16), leafInfo.Size).ToArray();
-                    output = null;
-                    return;
-                }
-                else
-                {
-                    throw new InvalidDataException();
-                }
-            }
-
-            var m = Regex.Match(cellText, @"^(?:(.*) )?<([0-9A-Fa-f]+)>$");
+            var m = Regex.Match(cellText, @"^(?:(.*) )?<([0-9A-Fa-f]+)(\.\.)?>$");
             if (m.Success)
             {
+                decoded = m.Groups[1].Value ?? "";
                 if (this.settings["bypassIfRawAvailable"] as string == "true")
                 {
-                    decoded = m.Groups[1].Value ?? "";
-                    output = GetByteArrayFromBinString(m.Groups[2].Value);
+                    output = m.Groups[3].Value == "" ?
+                        GetByteArrayFromBinString(m.Groups[2].Value) :
+                        Enumerable.Repeat(Convert.ToByte(m.Groups[2].Value.Substring(0, 2), 16), leafInfo.Size).ToArray();
                     return;
                 }
                 else
                 {
-                    cellText = m.Groups[1].Value;
+                    cellText = m.Groups[1].Value ?? "";
                 }
             }
             output = null;
@@ -111,7 +99,10 @@ namespace binariex
             switch (leafInfo.Type)
             {
                 case "bin":
-                    decoded = GetByteArrayFromBinString(cellText);
+                    decoded =
+                        !m.Success ? throw new BinariexException("reading input file", "Invalid binary representation: {0}", cellText ?? "''") :
+                        m.Groups[3].Value == "" ? GetByteArrayFromBinString(m.Groups[2].Value) :
+                        Enumerable.Repeat(Convert.ToByte(m.Groups[2].Value.Substring(0, 2), 16), leafInfo.Size).ToArray();
                     break;
                 case "char":
                     decoded = cellText;

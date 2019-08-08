@@ -21,6 +21,7 @@ namespace binariex
 
         dynamic settings;
         Dictionary<Glob, string> schemaMap = new Dictionary<Glob, string>();
+        Dictionary<Glob, string> outputMap = new Dictionary<Glob, string>();
 
         public BinariexApp(IEnumerable<string> inputPaths, string settingsPath)
         {
@@ -82,7 +83,11 @@ namespace binariex
                 }
             }
 
-            if (!(this.settings is Dictionary<object, object> && (this.settings as Dictionary<object, object>).ContainsKey("schemaMapping")))
+            if (!(this.settings is Dictionary<object, object>))
+            {
+                throw new BinariexException("loading setting file", "Invalid setting file format.");
+            }
+            if (!this.settings.ContainsKey("schemaMapping"))
             {
                 throw new BinariexException("loading setting file", "No \"schemaMapping\" section in the setting file.");
             }
@@ -91,6 +96,14 @@ namespace binariex
             {
                 var patternStr = (entry.Key as string).Contains("\\") ? entry.Key : Path.Combine("**", entry.Key);
                 this.schemaMap.Add(new Glob(patternStr), entry.Value);
+            }
+            if (this.settings.ContainsKey("outputMapping"))
+            {
+                foreach (var entry in this.settings["outputMapping"])
+                {
+                    var patternStr = (entry.Key as string).Contains("\\") ? entry.Key : Path.Combine("**", entry.Key);
+                    this.outputMap.Add(new Glob(patternStr), entry.Value);
+                }
             }
         }
 
@@ -140,7 +153,7 @@ namespace binariex
             try
             {
                 RunWithSingleFile(inputPath);
-                logger.Warn("Finished.");
+                logger.Info("Finished.");
             }
             catch (BinariexException exc)
             {
@@ -162,15 +175,7 @@ namespace binariex
             }
             logger.Info("  Schema file: {0}", schemaPath);
 
-            var outputPathRepr = this.settings["outputPath"] as string;
-            var outputPath = Regex.Replace(outputPathRepr, @"\{.+?\}", m =>
-                m.Value == "{sourceDirPath}" ? Path.GetDirectoryName(inputPath) :
-                m.Value == "{sourceName}" ? Path.GetFileName(inputPath) :
-                m.Value == "{sourceBaseName}" ? Path.GetFileNameWithoutExtension(inputPath) :
-                m.Value == "{sourceExtension}" ? Path.GetExtension(inputPath) :
-                m.Value == "{targetExtension}" ? inputPath.EndsWith(".xlsx") ? ".bin" : ".xlsx" :
-                m.Value
-            );
+            var outputPath = DetermineOutputPath(inputPath);
             if (File.Exists(outputPath))
             {
                 try
@@ -201,13 +206,19 @@ namespace binariex
         {
             var schemaDoc = LoadSchemaDoc(schemaPath);
 
+            var initialVars = new Dictionary<string, object>
+            {
+                { "$inputFullName", inputPath },
+                { "$inputName", Path.GetFileName(inputPath) }
+            };
+
             if (inputPath.EndsWith(".xlsx"))
             {
                 using (var reader = new ExcelReader(inputPath, this.settings["excel"]))
                 {
                     using (var writer = new BinaryWriter(outputPath))
                     {
-                        using (var converter = new Converter(reader, writer, schemaDoc))
+                        using (var converter = new Converter(reader, writer, schemaDoc, initialVars))
                         {
                             converter.Run();
                         }
@@ -220,7 +231,7 @@ namespace binariex
                 {
                     using (var writer = new ExcelWriter(outputPath, this.settings["excel"]))
                     {
-                        using (var converter = new Converter(reader, writer, schemaDoc))
+                        using (var converter = new Converter(reader, writer, schemaDoc, initialVars))
                         {
                             converter.Run();
                         }
@@ -232,15 +243,38 @@ namespace binariex
 
         string SelectSchema(string path)
         {
-            foreach (var entry in this.schemaMap)
+            return GetValueFromGlobDictionary(this.schemaMap, path) ??
+                throw new BinariexException("finding schema file", "Appropriate schema file not found.").AddInputPath(path);
+        }
+
+        string DetermineOutputPath(string inputPath)
+        {
+            var outputPathRepr = GetValueFromGlobDictionary(this.outputMap, inputPath) ?? (
+                this.settings.ContainsKey("outputPath") ? this.settings["outputPath"] as string :
+                throw new BinariexException("finding output path", "Output path not specified.")
+            );
+            var outputPath = Regex.Replace(outputPathRepr, @"\{.+?\}", m =>
+                m.Value == "{inputFileDirPath}" ? Path.GetDirectoryName(inputPath) :
+                m.Value == "{inputFileName}" ? Path.GetFileName(inputPath) :
+                m.Value == "{inputFileBaseName}" ? Path.GetFileNameWithoutExtension(inputPath) :
+                m.Value == "{inputFileExtension}" ? Path.GetExtension(inputPath) :
+                m.Value == "{targetExtension}" ? inputPath.EndsWith(".xlsx") ? ".bin" : ".xlsx" :
+                m.Value
+            );
+            return outputPath;
+        }
+
+        string GetValueFromGlobDictionary(Dictionary<Glob, string> dict, string key)
+        {
+            foreach (var entry in dict)
             {
-                if (entry.Key.IsMatch(path))
+                if (entry.Key.IsMatch(key))
                 {
                     return Path.IsPathRooted(entry.Value) ?
                         entry.Value : Path.Combine(Path.GetDirectoryName(this.settingsPath), entry.Value);
                 }
             }
-            throw new BinariexException("finding schema file", "Appropriate schema file not found.").AddInputPath(path);
+            return null;
         }
 
         XDocument LoadSchemaDoc(string path)

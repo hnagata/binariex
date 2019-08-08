@@ -99,10 +99,9 @@ namespace binariex
             SetHeaderName(ctx, ctx.HeaderRowIndex + 1, ctx.CursorColumnIndex, leafInfo.Name);
 
             var rawRepr = string.Join("", (raw as byte[]).Select(e => e.ToString("X2")));
-            var totalRepr = raw == decoded ? rawRepr :
-                decoded.ToString() == "" ? $@"<{rawRepr}>" :
+            var totalRepr = raw == decoded || decoded.ToString() == "" ? $@"<{rawRepr}>" :
                 $@"{decoded.ToString()} <{rawRepr}>";
-            var dispRepr = totalRepr.Length > MAX_NUM_CHAR_IN_LINE ? totalRepr.Substring(0, MAX_NUM_CHAR_IN_LINE - 2) + ".." : totalRepr;
+            var dispRepr = totalRepr.Length > MAX_NUM_CHAR_IN_LINE ? totalRepr.Substring(0, MAX_NUM_CHAR_IN_LINE - 3) + "..>" : totalRepr;
 
             var cell = ctx.Sheet.Cells[ctx.SheetContext.HeaderRowCount + ctx.CursorRowIndex, ctx.CursorColumnIndex];
             cell.Value = dispRepr;

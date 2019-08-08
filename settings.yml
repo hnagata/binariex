@@ -1,4 +1,4 @@
-﻿outputPath: "{sourceDirPath}\\{sourceName}{targetExtension}"
+﻿outputPath: "{inputFileDirPath}\\{inputFileName}{targetExtension}"
 schemaMapping:
   "*.bmp*": ..\..\..\Sample\bmp.xml
 excel:
@@ -6,4 +6,4 @@ excel:
   headerColor: SkyBlue
   enableAutoFilter: true
   freezePanes: true
-  bypassIfRawAvailable: false
+  bypassIfRawAvailable: true

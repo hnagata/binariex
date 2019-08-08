@@ -20,17 +20,18 @@ namespace binariex
         readonly IReader reader;
         readonly IWriter writer;
         readonly XDocument schemaDoc;
+        readonly Dictionary<string, object> initialVars;
 
         readonly bool forward;
 
-        readonly Encoding encoding;
-        readonly string endian;
+        Encoding encoding;
+        string endian;
 
         readonly Dictionary<string, UserCode> codeMap = new Dictionary<string, UserCode>();
 
         readonly Engine jsEngine = new Engine();
 
-        public Converter(IReader reader, IWriter writer, XDocument schemaDoc)
+        public Converter(IReader reader, IWriter writer, XDocument schemaDoc, Dictionary<string, object> initialVars)
         {
             this.parseElemMap = new Dictionary<string, Action<XElement>>
             {
@@ -44,22 +45,28 @@ namespace binariex
             this.reader = reader;
             this.writer = writer;
             this.schemaDoc = schemaDoc;
+            this.initialVars = initialVars;
 
             this.forward = reader is BinaryReader;
+        }
+
+        public void Run()
+        {
+            foreach (var e in this.initialVars)
+            {
+                this.jsEngine.SetValue(e.Key, e.Value);
+            }
 
             try
             {
-                this.encoding = GetEncoding(schemaDoc.Root.Attribute("encoding")?.Value ?? "UTF-8");
-                this.endian = GetEndian(schemaDoc.Root.Attribute("endian")?.Value ?? (BitConverter.IsLittleEndian ? "LE" : "BE"));
+                this.encoding = GetEncoding(EvaluateExpr(schemaDoc.Root.Attribute("encoding")?.Value)?.ToString() ?? "UTF-8");
+                this.endian = GetEndian(EvaluateExpr(schemaDoc.Root.Attribute("endian")?.Value)?.ToString() ?? (BitConverter.IsLittleEndian ? "LE" : "BE"));
             }
             catch (BinariexException exc)
             {
                 throw exc.AddSchemaElement(schemaDoc.Root);
             }
-        }
 
-        public void Run()
-        {
             if (schemaDoc.Root.Element("defs") != null)
             {
                 ParseDefs(schemaDoc.Root.Element("defs"));
@@ -223,8 +230,8 @@ namespace binariex
                 Name = EvaluateExpr(GetAttr(elem, "name")) as string,
                 Type = EvaluateExpr(GetAttr(elem, "type")) as string,
                 Size = Convert.ToInt32(EvaluateExpr(GetAttr(elem, "size"))),
-                Encoding = elem.Attribute("encoding") != null ? GetEncoding(elem.Attribute("encoding").Value) : this.encoding,
-                Endian = elem.Attribute("endian") != null ? GetEndian(EvaluateExpr(elem.Attribute("endian").Value) as string) : this.endian,
+                Encoding = elem.Attribute("encoding") != null ? GetEncoding(EvaluateExpr(elem.Attribute("encoding").Value).ToString()) : this.encoding,
+                Endian = elem.Attribute("endian") != null ? GetEndian(EvaluateExpr(elem.Attribute("endian").Value).ToString()) : this.endian,
                 HasUserCode = elem.Attribute("code") != null
             };
             if (leafInfo.Size <= 0)

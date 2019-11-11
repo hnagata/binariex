@@ -100,12 +100,12 @@ namespace binariex
 
         byte[] EncodeString(LeafInfo leafInfo, object decoded)
         {
-            return leafInfo.Encoding.GetBytes(decoded as string);
+            return leafInfo.Encoding.GetBytes(decoded.ToString());
         }
 
         byte[] EncodeSignedInteger(LeafInfo leafInfo, object decoded)
         {
-            var decodedInt = decoded as Int64?;
+            var decodedInt = Convert.ToInt64(decoded);
             var buffer =
                 leafInfo.Size == 1 ? new byte[] { (byte)decodedInt } :
                 leafInfo.Size == 2 ? BitConverter.GetBytes((short)decodedInt) :
@@ -117,7 +117,7 @@ namespace binariex
 
         byte[] EncodeUnsignedInteger(LeafInfo leafInfo, object decoded)
         {
-            var decodedInt = decoded as UInt64?;
+            var decodedInt = Convert.ToInt64(decoded);
             var buffer =
                 leafInfo.Size == 1 ? new byte[] { (byte)decodedInt } :
                 leafInfo.Size == 2 ? BitConverter.GetBytes((ushort)decodedInt) :
